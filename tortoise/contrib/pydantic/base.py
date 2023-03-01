@@ -22,7 +22,7 @@ def _get_fetch_fields(
     fetch_fields = []
     for field_name, field_type in pydantic_class.__annotations__.items():
         origin = getattr(field_type, "__origin__", None)
-        if origin in (list, List, Union):
+        while origin in (list, List, Union):
             field_type = field_type.__args__[0]
 
         # noinspection PyProtectedMember
