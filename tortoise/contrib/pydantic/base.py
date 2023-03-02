@@ -22,8 +22,9 @@ def _get_fetch_fields(
     fetch_fields = []
     for field_name, field_type in pydantic_class.__annotations__.items():
         origin = getattr(field_type, "__origin__", None)
-        while field_type in (list, List, Union):
+        while origin in (list, List, Union):
             field_type = field_type.__args__[0]
+            origin = getattr(field_type, "__origin__", None)
 
         # noinspection PyProtectedMember
         if field_name in model_class._meta.fetch_fields and issubclass(field_type, PydanticModel):
