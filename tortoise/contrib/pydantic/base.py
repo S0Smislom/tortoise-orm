@@ -35,6 +35,7 @@ def _get_fetch_fields(
                 fetch_fields.extend([field_name + "__" + f for f in subclass_fetch_fields])
             else:
                 fetch_fields.append(field_name)
+    print(fetch_fields)
     return fetch_fields
 
 
