@@ -1,17 +1,27 @@
 import asyncio
+import inspect
 import os as _os
+import sys
+import typing
 import unittest
 from asyncio.events import AbstractEventLoop
-from functools import wraps
+from functools import partial, wraps
 from types import ModuleType
-from typing import Any, Iterable, List, Optional, Union
+from typing import Any, Callable, Coroutine, Iterable, List, Optional, TypeVar, Union
 from unittest import SkipTest, expectedFailure, skip, skipIf, skipUnless
 
 from tortoise import Model, Tortoise, connections
 from tortoise.backends.base.config_generator import generate_config as _generate_config
 from tortoise.exceptions import DBConnectionError, OperationalError
 
+if sys.version_info >= (3, 10):
+    from typing import ParamSpec
+else:
+    from typing_extensions import ParamSpec
+
+
 __all__ = (
+    "MEMORY_SQLITE",
     "SimpleTestCase",
     "TestCase",
     "TruncationTestCase",
@@ -26,6 +36,7 @@ __all__ = (
     "skip",
     "skipIf",
     "skipUnless",
+    "init_memory_sqlite",
 )
 _TORTOISE_TEST_DB = "sqlite://:memory:"
 # pylint: disable=W0201
@@ -38,7 +49,6 @@ On success it will be marked as unexpected success.
 
 _CONFIG: dict = {}
 _CONNECTIONS: dict = {}
-_SELECTOR = None
 _LOOP: AbstractEventLoop = None  # type: ignore
 _MODULES: Iterable[Union[str, ModuleType]] = []
 _CONN_CONFIG: dict = {}
@@ -97,7 +107,6 @@ def initializer(
     # pylint: disable=W0603
     global _CONFIG
     global _CONNECTIONS
-    global _SELECTOR
     global _LOOP
     global _TORTOISE_TEST_DB
     global _MODULES
@@ -108,7 +117,6 @@ def initializer(
     _CONFIG = getDBConfig(app_label=app_label, modules=_MODULES)
     loop = loop or asyncio.get_event_loop()
     _LOOP = loop
-    _SELECTOR = loop._selector  # type: ignore
     loop.run_until_complete(_init_db(_CONFIG))
     _CONNECTIONS = connections._copy_storage()
     _CONN_CONFIG = connections.db_config.copy()
@@ -124,7 +132,6 @@ def finalizer() -> None:
     """
     _restore_default()
     loop = _LOOP
-    loop._selector = _SELECTOR  # type: ignore
     loop.run_until_complete(Tortoise._drop_databases())
 
 
@@ -165,6 +172,15 @@ class SimpleTestCase(unittest.IsolatedAsyncioTestCase):
 
     Based on `asynctest <http://asynctest.readthedocs.io/>`_
     """
+
+    def _setupAsyncioRunner(self) -> None:
+        if hasattr(asyncio, "Runner"):  # For python3.11+
+            runner = asyncio.Runner(debug=True, loop_factory=asyncio.get_event_loop)
+            self._asyncioRunner = runner
+
+    def _tearDownAsyncioRunner(self) -> None:
+        # Override runner tear down to avoid eventloop closing before testing completed.
+        pass
 
     async def _setUpDB(self) -> None:
         pass
@@ -256,7 +272,7 @@ class TruncationTestCase(SimpleTestCase):
     """
 
     async def _setUpDB(self) -> None:
-        await super(TruncationTestCase, self)._setUpDB()
+        await super()._setUpDB()
         _restore_default()
 
     async def _tearDownDB(self) -> None:
@@ -265,10 +281,10 @@ class TruncationTestCase(SimpleTestCase):
         for app in Tortoise.apps.values():
             for model in app.values():
                 quote_char = model._meta.db.query_class._builder().QUOTE_CHAR
-                await model._meta.db.execute_script(  # nosec
-                    f"DELETE FROM {quote_char}{model._meta.db_table}{quote_char}"
+                await model._meta.db.execute_script(
+                    f"DELETE FROM {quote_char}{model._meta.db_table}{quote_char}"  # nosec
                 )
-        await super(TruncationTestCase, self)._tearDownDB()
+        await super()._tearDownDB()
 
 
 class TransactionTestContext:
@@ -316,14 +332,14 @@ class TestCase(TruncationTestCase):
     """
 
     async def asyncSetUp(self) -> None:
-        await super(TestCase, self).asyncSetUp()
+        await super().asyncSetUp()
         self._db = connections.get("models")
         self._transaction = TransactionTestContext(self._db._in_transaction().connection)
         await self._transaction.__aenter__()  # type: ignore
 
     async def asyncTearDown(self) -> None:
         await self._transaction.__aexit__(None, None, None)
-        await super(TestCase, self).asyncTearDown()
+        await super().asyncTearDown()
 
     async def _tearDownDB(self) -> None:
         if self._db.capabilities.supports_transactions:
@@ -332,7 +348,7 @@ class TestCase(TruncationTestCase):
             await super()._tearDownDB()
 
 
-def requireCapability(connection_name: str = "models", **conditions: Any):
+def requireCapability(connection_name: str = "models", **conditions: Any) -> Callable:
     """
     Skip a test if the required capabilities are not matched.
 
@@ -362,21 +378,34 @@ def requireCapability(connection_name: str = "models", **conditions: Any):
     def decorator(test_item):
         if not isinstance(test_item, type):
 
-            @wraps(test_item)
-            def skip_wrapper(*args, **kwargs):
+            def check_capabilities() -> None:
                 db = connections.get(connection_name)
                 for key, val in conditions.items():
                     if getattr(db.capabilities, key) != val:
                         raise SkipTest(f"Capability {key} != {val}")
-                return test_item(*args, **kwargs)
+
+            if hasattr(asyncio, "Runner") and inspect.iscoroutinefunction(test_item):
+                # For python3.11+
+
+                @wraps(test_item)
+                async def skip_wrapper(*args, **kwargs):
+                    check_capabilities()
+                    return await test_item(*args, **kwargs)
+
+            else:
+
+                @wraps(test_item)
+                def skip_wrapper(*args, **kwargs):
+                    check_capabilities()
+                    return test_item(*args, **kwargs)
 
             return skip_wrapper
 
         # Assume a class is decorated
         funcs = {
-            var: getattr(test_item, var)
+            var: f
             for var in dir(test_item)
-            if var.startswith("test_") and callable(getattr(test_item, var))
+            if var.startswith("test_") and callable(f := getattr(test_item, var))
         }
         for name, func in funcs.items():
             setattr(
@@ -388,3 +417,75 @@ def requireCapability(connection_name: str = "models", **conditions: Any):
         return test_item
 
     return decorator
+
+
+T = TypeVar("T")
+P = ParamSpec("P")
+AsyncFunc = Callable[P, Coroutine[None, None, T]]
+AsyncFuncDeco = Callable[..., AsyncFunc]
+ModulesConfigType = Union[str, List[str]]
+MEMORY_SQLITE = "sqlite://:memory:"
+
+
+@typing.overload
+def init_memory_sqlite(models: Union[ModulesConfigType, None] = None) -> AsyncFuncDeco: ...
+
+
+@typing.overload
+def init_memory_sqlite(models: AsyncFunc) -> AsyncFunc: ...
+
+
+def init_memory_sqlite(
+    models: Union[ModulesConfigType, AsyncFunc, None] = None
+) -> Union[AsyncFunc, AsyncFuncDeco]:
+    """
+    For single file style to run code with memory sqlite
+
+    :param models: list_of_modules that should be discovered for models, default to ['__main__'].
+
+    Usage:
+
+    .. code-block:: python3
+
+        from tortoise import fields, models, run_async
+        from tortoise.contrib.test import init_memory_sqlite
+
+        class MyModel(models.Model):
+            id = fields.IntField(primary_key=True)
+            name = fields.TextField()
+
+        @init_memory_sqlite
+        async def run():
+            obj = await MyModel.create(name='')
+            assert obj.id == 1
+
+        if __name__ == '__main__'
+            run_async(run)
+
+
+    Custom models example:
+
+    .. code-block:: python3
+
+        @init_memory_sqlite(models=['app.models', 'aerich.models'])
+        async def run():
+            ...
+    """
+
+    def wrapper(func: AsyncFunc, ms: List[str]):
+        @wraps(func)
+        async def runner(*args, **kwargs) -> T:
+            await Tortoise.init(db_url=MEMORY_SQLITE, modules={"models": ms})
+            await Tortoise.generate_schemas()
+            return await func(*args, **kwargs)
+
+        return runner
+
+    default_models = ["__main__"]
+    if inspect.iscoroutinefunction(models):
+        return wrapper(models, default_models)
+    if models is None:
+        models = default_models
+    elif isinstance(models, str):
+        models = [models]
+    return partial(wrapper, ms=models)

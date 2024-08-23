@@ -1,6 +1,6 @@
 checkfiles = tortoise/ examples/ tests/ conftest.py
 py_warn = PYTHONDEVMODE=1
-pytest_opts = -n auto --cov=tortoise --tb=native -q
+pytest_opts = -n auto --cov=tortoise --cov-append --tb=native -q
 
 help:
 	@echo  "Tortoise ORM development makefile"
@@ -18,27 +18,26 @@ up:
 	@poetry update
 
 deps:
-	@poetry install -E asyncpg -E aiomysql -E asyncmy -E accel -E psycopg -E asyncodbc
+	@poetry install -E asyncpg -E aiomysql -E accel -E psycopg -E asyncodbc
 
 check: deps build
 ifneq ($(shell which black),)
 	black --check $(checkfiles) || (echo "Please run 'make style' to auto-fix style issues" && false)
 endif
-	ruff $(checkfiles)
+	ruff check $(checkfiles)
 	mypy $(checkfiles)
 	#pylint -d C,W,R $(checkfiles)
 	#bandit -r $(checkfiles)make
 	twine check dist/*
-	codespell $(checkfiles)
 
 lint: deps build
 ifneq ($(shell which black),)
 	black --check $(checkfiles) || (echo "Please run 'make style' to auto-fix style issues" && false)
 endif
-	flake8 $(checkfiles)
+	ruff check $(checkfiles)
 	mypy $(checkfiles)
 	#pylint $(checkfiles)
-	bandit -r $(checkfiles)
+	bandit -c pyproject.toml -r $(checkfiles)
 	twine check dist/*
 
 test: deps
@@ -66,11 +65,11 @@ test_oracle:
 	$(py_warn) TORTOISE_TEST_DB="oracle://SYSTEM:$(TORTOISE_ORACLE_PASS)@127.0.0.1:1521/test_\{\}?driver=$(TORTOISE_ORACLE_DRIVER)" pytest $(pytest_opts) --cov-append --cov-report=
 
 _testall: test_sqlite test_postgres_asyncpg test_postgres_psycopg test_mysql_myisam test_mysql test_mssql
-
-testall: deps _testall
 	coverage report
 
-ci: check testall
+testall: deps _testall
+
+ci: check _testall
 
 docs: deps
 	rm -fR ./build

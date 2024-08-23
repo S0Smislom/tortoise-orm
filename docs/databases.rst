@@ -167,8 +167,6 @@ MySQL optional parameters are pass-though parameters to the driver, see `here <h
     Duration to wait for connection before throwing error.
 ``echo`` (defaults to ``False``):
     Set to `True`` to echo SQL queries (debug only)
-``no_delay`` (defaults to ``None``):
-    Set to ``True`` to set TCP NO_DELAY to disable Nagle's algorithm on the socket.
 ``charset`` (defaults to ``utf8mb4``):
     Sets the character set in use
 ``ssl`` (defaults to ``False``):
@@ -229,7 +227,7 @@ handle complex objects.
     import ssl
     ctx = ssl.create_default_context()
     # And in this example we disable validation...
-    # Please don't do this. Loot at the official Python ``ssl`` module documentation
+    # Please don't do this. Look at the official Python ``ssl`` module documentation
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 

@@ -6,8 +6,140 @@ Changelog
 
 .. rst-class:: emphasize-children
 
+0.21
+====
+
+0.21.6
+------
+Fixed
+^^^^^
+- Fix bug in `pydantic_model_creator` when a foreign key is not included in `include` param. (#1430)
+- Fix bug in `contrib.sanic.register_tortoise` causing a deadlock when using asyncpg and > 1 workers (#1696)
+- Open psycopg pool with `.open()` to remove deprecated warning (#1697)
+- Fix bug in `bulk_update` when pk field is not `id` (#1698)
+- Fix mysql uuid compression bug (#1687)
+- Fix comment for fk fields without constraint for mysql (#1679)
+- Removed no_delay option for postgres, as it wasn't doing anything (#1677)
+
+0.21.5 <../0.21.5>`_ - 2024-07-18
+------
+Added
+^^^^^
+- Propagate `_create_db` parameter to RegisterTortoise. (#1676)
+
+0.21.4 <../0.21.4>`_ - 2024-07-03
+------
+Added
+^^^^^
+- Add ObjectDoesNotExistError to show better 404 message. (#759)
+- DoesNotExist and MultipleObjectsReturned support 'Type[Model]' argument. (#742)(#1650)
+- Add argument use_tz and timezone to RegisterTortoise. (#1649)
+- Support await `tortoise.contrib.fastapi.RegisterTortoise`. (#1662)
+- Add `tortoise.contrib.test.init_memory_sqlite`. (#1657)
+
+Fixed
+^^^^^
+- Fix `update_or_create` errors when field value changed. (#1584)
+- Fix bandit check error (#1643)
+- Fix potential race condition in ConnectionWrapper (#1656)
+- Fix py312 warning for datetime.utcnow (#1661)
+- Fix reusing values and value_list queries (#780)
+
+Changed
+^^^^^^^
+- Remove obsolete loop._selector from contrib/test. (#659)(#1636)
+
+`0.21.3 <../0.21.3>`_ - 2024-06-01
+------
+Fixed
+^^^^^
+- Fix `bulk_update` when using source_field for pk (#1633)
+
+`0.21.2 <../0.21.2>`_ - 2024-05-25
+------
+Added
+^^^^^
+- Add `create_unique_index` argument to M2M field and default if it is true (#1620)
+
+`0.21.1 <../0.21.1>`_ - 2024-05-24
+------
+Fixed
+^^^^^
+- Fix error on using old style `pk=True`
+
+`0.21.0 <../0.21.0>`_ - 2024-05-23
+------
+Added
+^^^^^
+- Enhancement for FastAPI lifespan support (#1371)
+- Add __eq__ method to Q to more easily test dynamically-built queries (#1506)
+- Added PlainToTsQuery function for postgres (#1347)
+- Allow field's default keyword to be async function (#1498)
+- Add support for queryset slicing. (#1341)
+
+Fixed
+^^^^^
+- Fix `DatetimeField` use '__year' report `'int' object has no attribute 'utcoffset'`. (#1575)
+- Fix `bulk_update` when using custom fields. (#1564)
+- Fix `optional` parameter in `pydantic_model_creator` does not work for pydantic v2. (#1551)
+- Fix `get_annotations` now evaluates annotations in the default scope instead of the app namespace. (#1552)
+- Fix `get_or_create` method. (#1404)
+- Use `index_name` instead of `BaseSchemaGenerator._generate_index_name` to generate index name.
+- Use subquery for count() and exists() in `QuerySet` to match count result to `QuerySet` result. (#1607)
+
+Changed
+^^^^^^^
+- Change `utils.chunk` from function to return iterables lazily.
+- Removed lower bound of id keys in generated pydantic models. (#1602)
+- Rename Field initial arguments `pk`/`index` to `primary_key`/`db_index`. (#1621)
+- Renamed `Model.check` method to `Model._check` to avoid naming collision issues  (#1559) (#1550)
+
+Breaking Changes
+^^^^^^^^^^^^^^^^
+- `bulk_create` now does not return anything. (#1614)
+
+0.20
+====
+
+0.20.1
+------
+Added
+^^^^^
+- Add binary compression support for `UUIDField` in `MySQL`. (#1458)
+- Only `Model`, `Tortoise`, `BaseDBAsyncClient`, `__version__`, and `connections` are now exported from `tortoise`
+- Add parameter `validators` to `pydantic_model_creator`. (#1471)
+
+Fixed
+^^^^^
+- Fix order of fields in `ValuesListQuery` when it has more than 10 fields. (#1492)
+- Fix pydantic v2 pydantic_model_creator nullable field not optional. (#1454)
+- Fix pydantic v2.5 unittest error. (#1535)
+- Fix pydantic_model_creator `exclude_readonly` parameter not working.
+- Fix annotation propagation for non-filter queries. (#1590)
+- Fix blacksheep example unittest error. (#1534)
+
+0.20.0
+------
+Added
+^^^^^
+- Allow ForeignKeyField(on_delete=NO_ACTION) (#1393)
+- Support `pydantic` 2.0. (#1433)
+
+Fixed
+^^^^^
+- Fix foreign key constraint not generated on MSSQL Server. (#1400)
+- Fix testcase error with python3.11 (#1308)
+
+Breaking Changes
+^^^^^^^^^^^^^^^^
+- Drop support for `pydantic` 1.x.
+- Drop support for `python` 3.7.
+- Param `config_class` of `pydantic_model_creator` is renamed to `model_config`.
+- Attr `config_class` of `PydanticMeta` is renamed to `model_config`.
+
 0.19
 ====
+
 0.19.3
 ------
 Added

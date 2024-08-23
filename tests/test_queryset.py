@@ -1,3 +1,5 @@
+from typing import Type
+
 from tests.testmodels import (
     Event,
     IntFields,
@@ -15,6 +17,7 @@ from tortoise.exceptions import (
     FieldError,
     IntegrityError,
     MultipleObjectsReturned,
+    NotExistOrMultiple,
     ParamsError,
 )
 from tortoise.expressions import F, RawSQL, Subquery
@@ -68,6 +71,58 @@ class TestQueryset(test.TestCase):
     async def test_offset_negative(self):
         with self.assertRaisesRegex(ParamsError, "Offset should be non-negative number"):
             await IntFields.all().offset(-10)
+
+    async def test_slicing_start_and_stop(self) -> None:
+        sliced_queryset = IntFields.all().order_by("intnum")[1:5]
+        manually_sliced_queryset = IntFields.all().order_by("intnum").offset(1).limit(4)
+        self.assertSequenceEqual(await sliced_queryset, await manually_sliced_queryset)
+
+    async def test_slicing_only_limit(self) -> None:
+        sliced_queryset = IntFields.all().order_by("intnum")[:5]
+        manually_sliced_queryset = IntFields.all().order_by("intnum").limit(5)
+        self.assertSequenceEqual(await sliced_queryset, await manually_sliced_queryset)
+
+    async def test_slicing_only_offset(self) -> None:
+        sliced_queryset = IntFields.all().order_by("intnum")[5:]
+        manually_sliced_queryset = IntFields.all().order_by("intnum").offset(5)
+        self.assertSequenceEqual(await sliced_queryset, await manually_sliced_queryset)
+
+    async def test_slicing_count(self) -> None:
+        queryset = IntFields.all().order_by("intnum")[1:5]
+        self.assertEqual(await queryset.count(), 4)
+
+    def test_slicing_negative_values(self) -> None:
+        with self.assertRaisesRegex(
+            expected_exception=ParamsError,
+            expected_regex="Slice start should be non-negative number or None.",
+        ):
+            _ = IntFields.all()[-1:]
+
+        with self.assertRaisesRegex(
+            expected_exception=ParamsError,
+            expected_regex="Slice stop should be non-negative number greater that slice start, "
+            "or None.",
+        ):
+            _ = IntFields.all()[:-1]
+
+    def test_slicing_stop_before_start(self) -> None:
+        with self.assertRaisesRegex(
+            expected_exception=ParamsError,
+            expected_regex="Slice stop should be non-negative number greater that slice start, "
+            "or None.",
+        ):
+            _ = IntFields.all()[2:1]
+
+    async def test_slicing_steps(self) -> None:
+        sliced_queryset = IntFields.all().order_by("intnum")[::1]
+        manually_sliced_queryset = IntFields.all().order_by("intnum")
+        self.assertSequenceEqual(await sliced_queryset, await manually_sliced_queryset)
+
+        with self.assertRaisesRegex(
+            expected_exception=ParamsError,
+            expected_regex="Slice steps should be 1 or None.",
+        ):
+            _ = IntFields.all()[::2]
 
     async def test_join_count(self):
         tour = await Tournament.create(name="moo")
@@ -424,7 +479,7 @@ class TestQueryset(test.TestCase):
         self.assertEqual(data[0] + 1, data[1])
 
     async def test_annotate_expression_filter(self):
-        count = await IntFields.annotate(intnum=F("intnum") + 1).filter(intnum__gt=30).count()
+        count = await IntFields.annotate(intnum1=F("intnum") + 1).filter(intnum1__gt=30).count()
         self.assertEqual(count, 23)
 
     async def test_get_raw_sql(self):
@@ -464,7 +519,7 @@ class TestQueryset(test.TestCase):
         sql_CountQuery = IntFields.filter(pk=1).force_index("index_name").count().sql()
         self.assertEqual(
             sql_CountQuery,
-            "SELECT COUNT(*) FROM `intfields` FORCE INDEX (`index_name`) WHERE `id`=1",
+            "SELECT COUNT('*') FROM `intfields` FORCE INDEX (`index_name`) WHERE `id`=1",
         )
 
         sql_ExistsQuery = IntFields.filter(pk=1).force_index("index_name").exists().sql()
@@ -504,7 +559,7 @@ class TestQueryset(test.TestCase):
         sql_CountQuery = IntFields.filter(pk=1).use_index("index_name").count().sql()
         self.assertEqual(
             sql_CountQuery,
-            "SELECT COUNT(*) FROM `intfields` USE INDEX (`index_name`) WHERE `id`=1",
+            "SELECT COUNT('*') FROM `intfields` USE INDEX (`index_name`) WHERE `id`=1",
         )
 
         sql_ExistsQuery = IntFields.filter(pk=1).use_index("index_name").exists().sql()
@@ -621,3 +676,16 @@ class TestQueryset(test.TestCase):
         t1 = await Tournament.create(name="1")
         ret = await Tournament.filter(pk=t1.pk).annotate(id=RawSQL("id + 1")).values("id")
         self.assertEqual(ret, [{"id": t1.pk + 1}])
+
+
+class TestNotExist(test.TestCase):
+    exp_cls: Type[NotExistOrMultiple] = DoesNotExist
+
+    @test.requireCapability(dialect="sqlite")
+    def test_does_not_exist(self):
+        assert str(self.exp_cls("old format")) == "old format"
+        assert str(self.exp_cls(Tournament)) == self.exp_cls.TEMPLATE.format(Tournament.__name__)
+
+
+class TestMultiple(TestNotExist):
+    exp_cls = MultipleObjectsReturned
